@@ -8,11 +8,24 @@ domain=$2
 rootDir=$3
 owner=$(who am i | awk '{print $1}')
 apacheUser=$(ps -ef | egrep '(httpd|apache2|apache)' | grep -v root | head -n1 | awk '{print $1}')
+distribution='ubuntu'
+apacheDir='apache2'
+userDir='/var/www/'
 email='webmaster@localhost'
 sitesEnabled='/etc/apache2/sites-enabled/'
 sitesAvailable='/etc/apache2/sites-available/'
-userDir='/var/www/'
+sitesEnableddomain=$sitesEnabled$domain.conf
 sitesAvailabledomain=$sitesAvailable$domain.conf
+
+if [ "$(awk -F= '/^NAME/{print $2}' /etc/os-release | tr "[:upper:]" "[:lower:]")" == '"centos linux"' ]
+then
+	distribution='centos'
+	apacheDir='httpd'
+	sitesEnabled='/etc/httpd/sites-enabled/'
+	sitesAvailable='/etc/httpd/sites-available/'
+	sitesEnableddomain=$sitesEnabled$domain.conf
+	sitesAvailabledomain=$sitesAvailable$domain.conf
+fi
 
 ### don't modify from here unless you know what you are doing ####
 
@@ -42,7 +55,10 @@ if [[ "$rootDir" =~ ^/ ]]; then
 	userDir=''
 fi
 
+
+
 rootDir=$userDir$rootDir
+
 
 if [ "$action" == 'create' ]
 	then
@@ -83,9 +99,9 @@ if [ "$action" == 'create' ]
 				AllowOverride all
 				Require all granted
 			</Directory>
-			ErrorLog /var/log/apache2/$domain-error.log
+			ErrorLog /var/log/$apacheDir/$domain-error.log
 			LogLevel error
-			CustomLog /var/log/apache2/$domain-access.log combined
+			CustomLog /var/log/$apacheDir/$domain-access.log combined
 		</VirtualHost>" > $sitesAvailabledomain
 		then
 			echo -e $"There is an ERROR creating $domain file"
@@ -124,12 +140,20 @@ if [ "$action" == 'create' ]
 		else
 			chown -R $owner:$owner $rootDir
 		fi
+		
+		if [ "$distribution" == "centos" ]; then
+			### enable website
+			ln -s $sitesAvailabledomain $sitesEnableddomain
+			
+			### restart Apache
+			systemctl restart httpd
+		else
+			### enable website
+			a2ensite $domain
 
-		### enable website
-		a2ensite $domain
-
-		### restart Apache
-		/etc/init.d/apache2 reload
+			### restart Apache
+			/etc/init.d/apache2 reload
+		fi
 
 		### show the finished message
 		echo -e $"Complete! \nYou now have a new Virtual Host \nYour new host is: http://$domain \nAnd its located at $rootDir"
@@ -150,13 +174,21 @@ if [ "$action" == 'create' ]
 				newhost=${domain//./\\.}
 				sed -i "/$newhost/d" /mnt/c/Windows/System32/drivers/etc/hosts
 			fi
+			
+			if [ "$distribution" == "centos" ]; then
+				### disable website
+				rm $sitesEnableddomain
+				
+				### restart Apache
+				systemctl restart httpd
+			else
+				### disable website
+				a2dissite $domain
 
-			### disable website
-			a2dissite $domain
-
-			### restart Apache
-			/etc/init.d/apache2 reload
-
+				### restart Apache
+				/etc/init.d/apache2 reload
+			fi
+			
 			### Delete virtual host rules files
 			rm $sitesAvailabledomain
 		fi
@@ -180,4 +212,4 @@ if [ "$action" == 'create' ]
 		### show the finished message
 		echo -e $"Complete!\nYou just removed Virtual Host $domain"
 		exit 0;
-fi
+fi 
